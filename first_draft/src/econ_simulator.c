@@ -9,7 +9,7 @@
 #define WINDOW_X_SIZE 1600 //800
 #define WINDOW_Y_SIZE 800 //800
 
-#define DEBUG_TIME 1
+#define DEBUG_TIME 0
 
 //#define OBJECT_SPACE_X 1000.0
 //#define OBJECT_SPACE_Y 1000.0
@@ -17,15 +17,19 @@
 #define TILE_X	32
 #define TILE_Y	32
 
-#define CIRCLE_SIDES 4
+#define CIRCLE_SIDES 20
 
 #define BUFFER_OFFSET(i) ((char *)NULL + (i))
 
-float OBJECT_SPACE_X = 1000.0 * (WINDOW_X_SIZE / 800.0);
-float OBJECT_SPACE_Y = 1000.0 * (WINDOW_Y_SIZE / 800.0);
+float OBJECT_SPACE_X = 1000.0 * (WINDOW_X_SIZE / 1600.0);
+float OBJECT_SPACE_Y = 1000.0 * (WINDOW_Y_SIZE / 1600.0);
 
 
 SimulationState render_sim;
+Vec2 view;
+float view_zoom;
+int move_up, move_down, move_left, move_right, zoom_out, zoom_in, shift_on;
+
 
 char *name;
 char buffer[64];
@@ -51,6 +55,50 @@ float distance(float x1, float y1, float x2, float y2)
     float sum = square_difference_x + square_difference_y;
     float d = sqrt(sum);
     return d;
+}
+
+
+//returns the total number of children under this body, plus the body
+int GetBranchSize(SimulationState *sim, int body_index) {
+	int leap = 1;
+	for(int i = 0; i < sim->g.bodies[body_index].num_children; ++i) {
+		leap += GetBranchSize(sim, body_index + leap);
+	}
+	return leap;
+}
+
+//returns the index of the star associated with this body
+int GetBodyStar(SimulationState *sim, int body_index) {
+	if(sim->g.bodies[body_index].parent != 0) {
+		return GetBodyStar(sim, sim->g.bodies[body_index].parent);
+	} else {
+		return body_index;
+	}
+}
+
+int GetNextDestination(SimulationState *sim, int ship_index) {
+	int source = sim->ships[ship_index].source;
+	int source_star;
+	int branch_size;
+	float r = ((float)(rand() % 10000)) * 0.0001;
+	if(source == 0) {
+		//we're at the galaxy center, so lets go someplace random!
+		sim->ships[ship_index].destination = rand() % sim->g.bodies_num;
+	} else {
+		if(r > 0.01) {
+			source_star = GetBodyStar(sim, source);
+			branch_size = GetBranchSize(sim, source_star);
+			if(branch_size > 1) {
+				sim->ships[ship_index].destination = source_star + (rand() % branch_size);
+			} else {
+				//we are on a single body system and will now enter a wait period
+				return 1;
+			}
+		} else {
+			sim->ships[ship_index].destination = 0;
+		}
+	}
+	return 0;
 }
 
 
@@ -320,7 +368,7 @@ void InitSim(SimulationState *sim) {
 		}
 	}
 
-	int star_range[2] = {20, 30};
+	int star_range[2] = {200, 300};
 	int planet_rolls = 10;
 	float planet_chance = 0.2;
 	int moon_rolls = 30;
@@ -435,10 +483,9 @@ void DrawStars(SimulationState *sim) {
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 	glUseProgram(starProgram);
+	glUniformMatrix4fv(starProjection, 1, GL_FALSE, &MVP[0][0]);
 	glBindVertexArray(star_VAO);
-
 	glDrawElementsInstanced(GL_TRIANGLE_FAN, sim->vertices_per_circle, GL_UNSIGNED_INT, BUFFER_OFFSET(0), sim->g.bodies_num);
-
 	glBindVertexArray(0);
 	glUseProgram(0);
 }
@@ -450,6 +497,7 @@ void DrawTiles(SimulationState *sim) {
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 	glUseProgram(tileProgram);
+	glUniformMatrix4fv(tileProjection, 1, GL_FALSE, &MVP[0][0]);
 	glUniform2f(tileMinMaxUniform, sim->activation_min, sim->activation_max);
 	glBindVertexArray(tile_VAO);
 	glDrawElementsInstanced(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_INT, BUFFER_OFFSET(0), TILE_X*TILE_Y);
@@ -460,15 +508,15 @@ void DrawTiles(SimulationState *sim) {
 }
 
 void DrawShips(SimulationState *sim) {
+
 	glBindBuffer(GL_ARRAY_BUFFER, shipVertexBufferObject);
 	glBufferSubData(GL_ARRAY_BUFFER, 0, sim->ship_positions_data_size, &(sim->ship_positions_data[0]));
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 	glUseProgram(shipProgram);
+	glUniformMatrix4fv(shipProjection, 1, GL_FALSE, &MVP[0][0]);
 	glBindVertexArray(ship_VAO);
-
 	glDrawElements(GL_POINTS, sim->ship_count, GL_UNSIGNED_INT, BUFFER_OFFSET(0));
-
 	glBindVertexArray(0);
 	glUseProgram(0);
 }
@@ -501,6 +549,7 @@ void StepShips(SimulationState *sim) {
 				sim->ships[i].source = sim->ships[i].destination;
 			}
 		} else {
+			sim->ship_positions_data[(i*4)+2] = -100.0;
 			sim->ship_positions_data[(i*4)+3] = 0.0;
 		}
 	}
@@ -575,13 +624,15 @@ void ProcessTileActivation(SimulationState *sim) {
 	} 
 }
 
+
 void ProcessShipActivity(SimulationState *sim) {
 	int number_of_charting_requests = 0;
 	for(int i = 0; i < sim->ship_count; ++i) {
 		if(sim->ships[i].status == 0) {
 			//ship is prepped, lets get it moving!
 			sim->ships[i].status = 1;
-			sim->ships[i].destination = rand() % sim->g.bodies_num;
+			//int res = GetNextDestination(sim, i)
+			//sim->ships[i].destination = rand() % sim->g.bodies_num;
 			number_of_charting_requests++;
 			//printf("ship %d is being charted from body %d to body %d\n", i, sim->ships[i].source, sim->ships[i].destination);
 			SolveShipPath(sim, i, sim->ships[i].source, sim->ships[i].destination, 1);
@@ -595,9 +646,15 @@ void ProcessShipActivity(SimulationState *sim) {
 			//ship is moving, update it!
 			//StepShip will calculate when it has reached the destination.
 		} else if (sim->ships[i].status == 3) {
-			//ship is resupplying, check if it's ready to launch
+			//ship is resupplying, get next destination and check if it's ready to launch
 			if(sim->orbit_time - sim->ships[i].start_time >= sim->ships[i].journey_time) {
-				sim->ships[i].status = 0;
+				if(GetNextDestination(sim, i) == 1) {
+					//recieved a delay order
+					sim->ships[i].start_time = sim->orbit_time;
+					sim->ships[i].journey_time = ((float)(rand() % 1000)) * 0.001; //let resupply be 1/10th the previous journey time
+				} else {
+					sim->ships[i].status = 0;
+				}
 			}
 		}
 	}
@@ -628,13 +685,50 @@ void StepSim(SimulationState *sim) {
 
 	ProcessTileActivation(sim);
 	if(sim->tick_counter % 10 == 0) {
-			ProcessShipActivity(sim);
+		ProcessShipActivity(sim);
 	}
 
 	StepShips(sim);
 
 	sim->orbit_time += sim->orbit_step;
 	sim->tick_counter++;
+}
+
+void updateView() {
+	/*glMatrixMode(GL_PROJECTION);	
+	glLoadIdentity();
+	glOrtho(  -OBJECT_SPACE_X + view.x + (view_zoom * (WINDOW_X_SIZE / 800.0)), OBJECT_SPACE_X + view.x - (view_zoom * (WINDOW_X_SIZE / 800.0)), -OBJECT_SPACE_Y + view.y + (view_zoom * (WINDOW_Y_SIZE / 800.0)), OBJECT_SPACE_Y + view.y - (view_zoom * (WINDOW_Y_SIZE / 800.0)), -10.0, 10.0);
+	*/
+	glm_ortho(-OBJECT_SPACE_X + view.x + (view_zoom * (WINDOW_X_SIZE / 800.0)), OBJECT_SPACE_X + view.x - (view_zoom * (WINDOW_X_SIZE / 800.0)), -OBJECT_SPACE_Y + view.y + (view_zoom * (WINDOW_Y_SIZE / 800.0)), OBJECT_SPACE_Y + view.y - (view_zoom * (WINDOW_Y_SIZE / 800.0)), -10.0, 10.0, MVP);
+	glPointSize(1.0 * (1 + (view_zoom / 100.0)));
+}
+
+void changeView() {
+
+	int view_step;
+	if(shift_on) {
+		view_step = 100.0;
+	} else {
+		view_step = 10.0;
+	}
+
+	if(move_left && !move_right) {
+		view.x -= view_step;
+	} else if(move_right && !move_left){
+		view.x += view_step;
+	}
+
+	if(move_up && !move_down) {
+		view.y += view_step;
+	} else if(move_down && !move_up) {
+		view.y -= view_step;
+	}
+
+	if(zoom_out && !zoom_in) {
+		view_zoom -= view_step;
+	} else if(zoom_in && !zoom_out && (view_zoom * (WINDOW_X_SIZE / 800.0)) < OBJECT_SPACE_X - 50.0f) {
+		view_zoom += view_step;
+	}
 }
 
 
@@ -645,6 +739,9 @@ int on = 1;
 
 void display(void)
 {
+	changeView();
+	updateView();
+
 	double tick_time = 0.0;
 	double sim_time = 0.0;
 	double render_time = 0.0;
@@ -713,9 +810,11 @@ void display(void)
 		//printf("\tsimulation took %f time\tdrawing took %f time\n", sim_time, render_time);
 		printf("average tick time: %f\n", (tick_time_total / total_ticks));
 	}
+
 }
 
-void keyboard(unsigned char key, int x, int y)
+
+void keyDown(unsigned char key, int x, int y)
 {
 	/* this is the keyboard event handler
 	   the x and y parameters are the mouse 
@@ -726,9 +825,77 @@ void keyboard(unsigned char key, int x, int y)
 	case 'U':
 		render_sim.on_button.state = !(render_sim.on_button.state);
 		break;
+	case 'w':
+	case 'W':
+		move_up = 1;
+		break;
+	case 'a':
+	case 'A':
+		move_left = 1;
+		break;
+	case 's':
+	case 'S':
+		move_down = 1;
+		break;
+	case 'd':
+	case 'D':
+		move_right = 1;
+		break;
+	case 'q':
+	case 'Q':
+		zoom_out = 1;
+		break;
+	case 'e':
+	case 'E':
+		zoom_in = 1;
+		break;
 	}
 
-	display(); /* repaint the window */
+	int mod_key = glutGetModifiers();
+	if(mod_key == 1) {
+		shift_on = true;
+	} else {
+		shift_on = false;
+	}
+
+	//display(); /* repaint the window */
+}
+
+void keyUp(unsigned char key, int x, int y)
+{
+	/* this is the keyboard event handler
+	   the x and y parameters are the mouse 
+	   coordintes when the key was struck */
+	switch (key)
+	{
+	case 'w':
+	case 'W':
+		move_up = 0;
+		break;
+	case 'a':
+	case 'A':
+		move_left = 0;
+		break;
+	case 's':
+	case 'S':
+		move_down = 0;
+		break;
+	case 'd':
+	case 'D':
+		move_right = 0;
+		break;
+	case 'q':
+	case 'Q':
+		zoom_out = 0;
+		break;
+	case 'e':
+	case 'E':
+		zoom_in = 0;
+		break;
+	}
+
+
+	//display(); /* repaint the window */
 }
 
 void mouse(int button, int state, int x, int y) {
@@ -773,6 +940,16 @@ void reshape (int w, int h)
 
 int main(int argc, char** argv) {
 	srand(time(0));
+	view = cv2(0.0, 0.0);
+	view_zoom = 0.0f;
+	move_up = 0;
+	move_down = 0;
+	move_left = 0;
+	move_right = 0;
+	zoom_out = 0;
+	zoom_in = 0;
+	shift_on = 0;
+
 	InitSim(&render_sim);
 
 	printf("SIM INITIATED\n");
@@ -814,7 +991,9 @@ int main(int argc, char** argv) {
 	glutTimerFunc(0, timer, 0);
 	glutDisplayFunc(display);
 	glutReshapeFunc(reshape);
-	glutKeyboardFunc(keyboard);  /* set keyboard handler */
+	glutKeyboardFunc(keyDown);  /* set keyboard handler */
+	glutKeyboardUpFunc(keyUp);
+	glutSetKeyRepeat(GLUT_KEY_REPEAT_OFF);
 	glutMouseFunc(mouse);
 	glutMainLoop();
 

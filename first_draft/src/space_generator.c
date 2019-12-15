@@ -62,7 +62,7 @@ void PopulateSpace(Galaxy *g, float radius, int num_stars, int planet_rolls, flo
 		g->bodies[curr_body].orbit_speed = (float)((random() % 95) + 5)*0.001;
 		printf("star orbit speed: %f\n", g->bodies[curr_body].orbit_speed);
 		g->bodies[curr_body].orbit_offset = ((float)(random() % 100000) * 0.01);
-		g->bodies[curr_body].orbit_distance = (float)((random() % 2800))*0.001;
+		g->bodies[curr_body].orbit_distance = (float)((random() % 10000))*0.001;
 		g->bodies[curr_body].orbit_shape = cv2(((float)(random() % 500) + 250) * g->bodies[curr_body].orbit_distance,
 											   ((float)(random() % 500) + 250) * g->bodies[curr_body].orbit_distance);
 		g->bodies[curr_body].pos = cv2(0.0f, 0.0f); //we will set this later
@@ -95,7 +95,7 @@ void PopulateSpace(Galaxy *g, float radius, int num_stars, int planet_rolls, flo
 				g->bodies[curr_body].index = curr_body;
 				g->bodies[curr_body].parent = l2; //moon's parent is it's planet
 				g->bodies[curr_body].radius = g->bodies[g->bodies[curr_body].parent].radius * 0.5;
-				g->bodies[curr_body].orbit_speed = (float)((random() % 200) - 100)*0.01;
+				g->bodies[curr_body].orbit_speed = (float)((random() % 20000) - 10000)*0.01;
 				g->bodies[curr_body].orbit_offset = ((float)(random() % 10000) * 0.01);
 				g->bodies[curr_body].orbit_distance = (float)((random() % 100))*0.01;
 				g->bodies[curr_body].orbit_shape = cv2((((float)(random() % 1000)) * pow(0.1, 2)+g->bodies[g->bodies[curr_body].parent].radius), //to pow three for moons

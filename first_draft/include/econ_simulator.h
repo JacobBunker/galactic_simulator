@@ -216,6 +216,10 @@ GLuint tilePositionAttrib;
 GLuint tileOffsetAttrib;
 GLuint tileActivationAttrib;
 
+GLuint shipProjection;
+GLuint starProjection;
+GLuint tileProjection;
+
 const GLchar v_ship_shader[] = "#version 330\nlayout(location = 0) in vec4 position;layout(location = 1) in vec4 color;smooth out vec4 theColor;uniform mat4 projection;void main() {gl_Position = projection * position; theColor=color;}";
 const GLchar f_ship_shader[] = "#version 330\nsmooth in vec4 theColor; out vec4 outputColor; void main(){outputColor = theColor;}";
 
@@ -236,10 +240,10 @@ void InitializeShipProgram() {
 
 	shipPositionAttrib = glGetAttribLocation(shipProgram, "position");
 	shipColorAttrib = glGetAttribLocation(shipProgram, "color");
-	GLuint projection = glGetUniformLocation(shipProgram, "projection");
+	shipProjection = glGetUniformLocation(shipProgram, "projection");
 
 	glUseProgram(shipProgram);
-	glUniformMatrix4fv(projection, 1, GL_FALSE, &MVP[0][0]);
+	glUniformMatrix4fv(shipProjection, 1, GL_FALSE, &MVP[0][0]);
 	glUseProgram(0);
 }
 
@@ -249,10 +253,10 @@ void InitializeStarProgram() {
 	starPositionAttrib = glGetAttribLocation(starProgram, "position");
 	starColorAttrib = glGetAttribLocation(starProgram, "color");
 	starOffsetAttrib = glGetAttribLocation(starProgram, "offset");
-	GLuint projection = glGetUniformLocation(starProgram, "projection");
+	starProjection = glGetUniformLocation(starProgram, "projection");
 
 	glUseProgram(starProgram);
-	glUniformMatrix4fv(projection, 1, GL_FALSE, &MVP[0][0]);
+	glUniformMatrix4fv(starProjection, 1, GL_FALSE, &MVP[0][0]);
 	glUseProgram(0);
 }
 
@@ -264,10 +268,10 @@ void InitializeTileProgram() {
 	tileOffsetAttrib = glGetAttribLocation(tileProgram, "offset");
 	tileActivationAttrib = glGetAttribLocation(tileProgram, "activation");
 	tileMinMaxUniform = glGetUniformLocation(tileProgram, "min_max");
-	GLuint projection = glGetUniformLocation(tileProgram, "projection");
+	tileProjection = glGetUniformLocation(tileProgram, "projection");
 
 	glUseProgram(tileProgram);
-	glUniformMatrix4fv(projection, 1, GL_FALSE, &MVP[0][0]);
+	glUniformMatrix4fv(tileProjection, 1, GL_FALSE, &MVP[0][0]);
 	glUniform2f(tileMinMaxUniform, 0.0f, 1000000000.0f);
 	glUseProgram(0);
 }
