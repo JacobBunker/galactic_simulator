@@ -9,7 +9,7 @@
 #define WINDOW_X_SIZE 1600 //800
 #define WINDOW_Y_SIZE 800 //800
 
-#define DEBUG_TIME 0
+#define DEBUG_TIME 1
 
 //#define OBJECT_SPACE_X 1000.0
 //#define OBJECT_SPACE_Y 1000.0
@@ -84,18 +84,12 @@ int GetNextDestination(SimulationState *sim, int ship_index) {
 	if(source == 0) {
 		//we're at the galaxy center, so lets go someplace random!
 		sim->ships[ship_index].destination = rand() % sim->g.bodies_num;
-		if(sim->ships[ship_index].destination >= sim->g.bodies_num) {
-			printf("source zero -> bodies num: %d, target body index: %d!\n", sim->g.bodies_num, sim->ships[ship_index].destination);
-		}
 	} else {
 		if(r > 0.01) {
 			source_star = GetBodyStar(sim, source);
 			branch_size = GetBranchSize(sim, source_star);
 			if(branch_size > 1) {
 				sim->ships[ship_index].destination = source_star + (rand() % branch_size);
-				if(sim->ships[ship_index].destination >= sim->g.bodies_num) {
-					printf("branch_size > 1 -> bodies num: %d, target body index: %d!\n", sim->g.bodies_num, sim->ships[ship_index].destination);
-				}
 			} else {
 				//we are on a single body system and will now enter a wait period
 				return 1;
@@ -168,36 +162,24 @@ int num_l1_attempts;
 double total_l2_passes;
 int num_l2_attempts;
 
-void SolveShipPathWithDelay(SimulationState *sim, int ship_index, int start_body_index, int target_body_index) {
-
+void SovleShipPathWithDelay(SimulationState *sim, int ship_index, int start_body_index, int target_body_index) {
 
 	float best_t = 10000000000.0;
 	float delay = 0.0;
 	float delay_step = 0.005;
 	int delay_search_steps = 20;
-
-	int growing;
-	float tolerance;
-	float dist;
-	float t_step;
-	float radius;
-	float t;
-	int passes;
-
-	Vec2 starting_pos;
-	Vec2 target_pos;
-
 	num_l1_attempts++;
 	while(delay_search_steps > 0) {
-		starting_pos = GetBodyPositionAtTime(sim, sim->orbit_time + delay, start_body_index);
-		target_pos = cv2(0.0, 0.0);
+		Vec2 starting_pos = GetBodyPositionAtTime(sim, sim->orbit_time + delay, start_body_index);
+		Vec2 target_pos = cv2(0.0, 0.0);
 
-		growing = 1;
-		tolerance = 5.0;
-		t_step = 0.05;
-		radius = 0.0;
-		t = 0.0;
-		passes = 0;
+		int growing = 1;
+		float tolerance = 5.0;
+		float dist;
+		float t_step = 0.05;
+		float radius = 0.0;
+		float t = 0.0;
+		int passes = 0;
 
 		total_l1_passes++;
 
@@ -245,100 +227,6 @@ void SolveShipPathWithDelay(SimulationState *sim, int ship_index, int start_body
 		delay_search_steps--;
 	}
 }
-
-float max_time_saved_with_vel;
-
-void SolveShipPathWithVelocity(SimulationState *sim, int ship_index, int start_body_index, int target_body_index) {
-
-	float best_t = 10000000000.0;
-	float delay = 0.0;
-	float delay_step = 0.005;
-	int delay_search_steps = 20;
-
-	int growing;
-	float tolerance;
-	float dist;
-	float t_step;
-	float radius;
-	float t;
-	int passes;
-
-	Vec2 starting_pos;
-	Vec2 starting_pos_previous_step;
-	Vec2 starting_vel;
-
-	Vec2 target_pos;
-	Vec2 target_pos_previous_step;
-	Vec2 target_vel;
-
-	num_l1_attempts++;
-	while(delay_search_steps > 0) {
-		starting_pos = GetBodyPositionAtTime(sim, sim->orbit_time + delay, start_body_index);
-		starting_pos_previous_step = GetBodyPositionAtTime(sim, sim->orbit_time + delay - sim->orbit_step, start_body_index);
-		starting_vel.x = starting_pos.x - starting_pos_previous_step.x;
-		starting_vel.y = starting_pos.y - starting_pos_previous_step.y;
-
-		target_pos = cv2(0.0, 0.0);
-
-		growing = 1;
-		tolerance = 5.0;
-		t_step = 0.05;
-		radius = 0.0;
-		t = 0.0;
-		passes = 0;
-
-		total_l1_passes++;
-
-		//lets try approximating the initial t by looking at the star's current distance
-		if(target_body_index != 0) {
-			target_pos = GetBodyPositionAtTime(sim, sim->orbit_time + delay + t, target_body_index);
-			dist = distance(starting_pos.x, starting_pos.y, target_pos.x, target_pos.y);
-			t = dist / sim->ships[ship_index].velocity; 
-		} 
-
-		while(passes < 1000) {
-			radius = t * sim->ships[ship_index].velocity;
-			target_pos = GetBodyPositionAtTime(sim, sim->orbit_time + delay + t, target_body_index);
-			dist = distance(starting_pos.x + (starting_vel.x * t), starting_pos.y + (starting_vel.y * t), target_pos.x, target_pos.y);
-			if(fabs(radius - dist) < tolerance) {
-				total_l2_passes += passes;
-				num_l2_attempts++;
-				float time_saved_with_vel = (distance(starting_pos.x, starting_pos.y, target_pos.x, target_pos.y) - dist) / sim->ships[ship_index].velocity;
-				if(time_saved_with_vel > max_time_saved_with_vel) {
-					max_time_saved_with_vel = time_saved_with_vel;
-				}
-				//printf("found path with time %f with overshoot %f in %d passes\n", t, (radius - dist), passes);
-				break;
-			} else {
-				if(radius > dist && growing) {
-					t_step = (-t_step) * 0.9;
-					growing = 0;
-				} else if(radius < dist && !growing) {
-					t_step = (-t_step) * 0.9;
-					growing = 1;
-				}
-				t += t_step;
-			}
-			passes++;
-		}
-
-		if(t + delay < best_t) {
-			//update the ship
-			//printf("new best path found with delay %f and total time to destination %f\n", delay, (t + delay));
-			sim->ships[ship_index].start_time = sim->orbit_time + delay;
-			sim->ships[ship_index].journey_time = t;
-			sim->ships[ship_index].trajectory = cv2(target_pos.x - starting_pos.x, target_pos.y - starting_pos.y);
-			sim->ships[ship_index].source_pos = starting_pos;
-			sim->ships[ship_index].destination_pos = target_pos;
-			best_t = t + delay;
-		}
-
-		delay += delay_step;
-		delay_search_steps--;
-	}
-}
-
-
 
 
 
@@ -346,10 +234,8 @@ void SolveShipPath(SimulationState *sim, int ship_index, int start_body_index, i
 	if(option == 0) {
 		//solve the ship path without paying attention to possible gains from delaying departure
 		SolveShipPathSimple(sim, ship_index, start_body_index, target_body_index);
-	} else if(option == 1){
-		SolveShipPathWithDelay(sim, ship_index, start_body_index, target_body_index);
-	} else if(option == 2){
-		SolveShipPathWithVelocity(sim, ship_index, start_body_index, target_body_index);
+	} else {
+		SovleShipPathWithDelay(sim, ship_index, start_body_index, target_body_index);
 	}
 }
 
@@ -561,8 +447,6 @@ void InitSim(SimulationState *sim) {
 		sim->ship_colors[(i*4) + 2] = ((sim->ships[i].velocity + 10) / ((10000*vel_mod) + 10));
 		sim->ship_colors[(i*4) + 3] = 1.0f;
 		sim->ship_index[i] = i;
-
-		sim->ships[i].velocity += 100; //add min velocity
 	}
 }
 
@@ -772,7 +656,7 @@ void ProcessShipActivity(SimulationState *sim) {
 			//sim->ships[i].destination = rand() % sim->g.bodies_num;
 			number_of_charting_requests++;
 			//printf("ship %d is being charted from body %d to body %d\n", i, sim->ships[i].source, sim->ships[i].destination);
-			SolveShipPath(sim, i, sim->ships[i].source, sim->ships[i].destination, 2);
+			SolveShipPath(sim, i, sim->ships[i].source, sim->ships[i].destination, 1);
 		} else if (sim->ships[i].status == 1) {
 			//ship is delaying launch, see if it's time to leave
 			if(sim->orbit_time - sim->ships[i].start_time >= 0.0) {
@@ -795,7 +679,7 @@ void ProcessShipActivity(SimulationState *sim) {
 			}
 		}
 	}
-	//printf("%d charting requests on time %f\n", number_of_charting_requests, sim->orbit_time);
+	printf("%d charting requests on time %f\n", number_of_charting_requests, sim->orbit_time);
 }
 
 
@@ -948,7 +832,6 @@ void display(void)
 		printf("average tick time: %f\n", (tick_time_total / total_ticks));
 		printf("average number of passes until l1 convergence: %f\n", total_l1_passes / num_l1_attempts);
 		printf("average number of passes until l2 convergence: %f\n", total_l2_passes / num_l2_attempts);
-		printf("max time saved with velocity: %f\n", max_time_saved_with_vel);
 
 	}
 
@@ -1095,7 +978,6 @@ int main(int argc, char** argv) {
 	num_l1_attempts = 0;
 	total_l2_passes = 0.0;
 	num_l2_attempts = 0;
-	max_time_saved_with_vel = 0.0;
 
 
 	InitSim(&render_sim);
